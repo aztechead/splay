@@ -37,7 +37,7 @@ function arrange() {
   undo();
   narrowed = new WeakSet();
   if (!active) return;
-  narrow([root]);
+  if (!textUnderButtons) narrow([root]);
   dodge();
 }
 
@@ -46,6 +46,7 @@ function arrange() {
 const TEXT_EDGE = 392; // points: where the glass of Safari's buttons begins
 let narrowed = new WeakSet();
 let textStyle = "hyphenate"; // "hyphenate", "justify" or "ragged", set in the Splay app
+let textUnderButtons = false; // opt-in in the Splay app: lines run the full width, under the buttons
 function narrow(roots) {
   const edge = TEXT_EDGE / visualViewport.scale;
   const width = root.clientWidth;
@@ -114,7 +115,7 @@ function nestedIn(el, set) {
 let added = new Set();
 let pending = 0;
 function queue(records) {
-  if (!active) return;
+  if (!active || textUnderButtons) return;
   for (const record of records) {
     for (const node of record.addedNodes) {
       const el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
@@ -256,23 +257,25 @@ browser.runtime.onMessage.addListener(async (message) => {
 });
 
 // Storage is slow to answer, so widen first and undo it if this site is switched off.
-browser.storage.local.get([site, "textStyle"]).then((saved) => {
+browser.storage.local.get([site, "textStyle", "textUnderButtons"]).then((saved) => {
   off = saved[site] === "off";
-  const restyle = saved.textStyle && saved.textStyle !== textStyle;
+  const restyle = (saved.textStyle && saved.textStyle !== textStyle) || (saved.textUnderButtons ?? false) !== textUnderButtons;
   textStyle = saved.textStyle ?? textStyle;
+  textUnderButtons = saved.textUnderButtons ?? false;
   widen();
   if (restyle) arrange();
 });
 
-// The text style comes from the Splay app: the cached copy above, refreshed from the app on every page
+// The text settings come from the Splay app: the cached copy above, refreshed from the app on every page
 // load. A change re-fits open pages.
 browser.storage.onChanged.addListener((changes) => {
-  if (!changes.textStyle) return;
-  textStyle = changes.textStyle.newValue ?? "hyphenate";
+  if (!changes.textStyle && !changes.textUnderButtons) return;
+  if (changes.textStyle) textStyle = changes.textStyle.newValue ?? "hyphenate";
+  if (changes.textUnderButtons) textUnderButtons = changes.textUnderButtons.newValue ?? false;
   arrange();
 });
 browser.runtime.sendMessage("settings");
-// Coming back to Safari, for example from the Splay app, picks up a new style without a reload.
+// Coming back to Safari, for example from the Splay app, picks up new settings without a reload.
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") browser.runtime.sendMessage("settings");
 });

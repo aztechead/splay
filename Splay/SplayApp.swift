@@ -27,11 +27,19 @@ struct SplayApp: App {
     // Shared with the Safari extension through the App Group; SafariWebExtensionHandler reads it.
     @AppStorage("textStyle", store: UserDefaults(suiteName: "group.com.aztechead.Splay"))
     private var textStyle = TextStyle.hyphenate
+    @AppStorage("textUnderButtons", store: UserDefaults(suiteName: "group.com.aztechead.Splay"))
+    private var textUnderButtons = false
 
     var body: some Scene {
         WindowGroup {
             NavigationStack {
                 Form {
+                    Section {
+                        Toggle("Run text under the buttons", isOn: $textUnderButtons)
+                    } footer: {
+                        Text("Lines of text use the whole width of the screen and pass under Safari's buttons. Links and buttons are still moved clear of them.")
+                    }
+
                     Section {
                         Picker("Text beside the buttons", selection: $textStyle) {
                             ForEach(TextStyle.allCases) { style in
@@ -44,10 +52,11 @@ struct SplayApp: App {
                         }
                         .pickerStyle(.inline)
                         .labelsHidden()
+                        .disabled(textUnderButtons)
                     } header: {
                         Text("Text beside Safari's buttons")
                     } footer: {
-                        Text("Applies to every site from the next page you open.")
+                        Text("Applies to every site. Pages already open update when you go back to Safari.")
                     }
 
                     Section {
