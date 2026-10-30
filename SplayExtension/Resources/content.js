@@ -39,6 +39,9 @@ function frontScreen() {
 
 function widen() {
   if (!meta) return;
+  // A page Safari is still opening (say, as it launches) can have no size yet, and frontScreen() needs one
+  // when the screen size is hidden. Check again shortly rather than decide it isn't the front screen.
+  if (!innerWidth) return void setTimeout(widen, 50);
   const on = !off && frontScreen();
   active = on;
   // Safari's Page Zoom shows up as visualViewport.scale and is applied after load, with a resize.
