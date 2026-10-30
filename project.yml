@@ -1,0 +1,53 @@
+name: Splay
+options:
+  bundleIdPrefix: com.aztechead
+  deploymentTarget:
+    iOS: "27.0"
+settings:
+  base:
+    SDKROOT: iphoneos
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    GENERATE_INFOPLIST_FILE: YES
+    DEVELOPMENT_TEAM: FVKNZ2X7VK
+    CODE_SIGN_STYLE: Automatic
+targets:
+  Splay:
+    type: application
+    platform: iOS
+    sources: [Splay]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aztechead.Splay
+        TARGETED_DEVICE_FAMILY: "1"
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Splay
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    entitlements:
+      path: Splay/Splay.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.aztechead.Splay]
+    dependencies:
+      - target: SplayExtension
+  SplayExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: SplayExtension
+        excludes: [Resources]
+      - path: SplayExtension/Resources
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aztechead.Splay.Extension
+        TARGETED_DEVICE_FAMILY: "1"
+        INFOPLIST_FILE: SplayExtension/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+    entitlements:
+      path: SplayExtension/SplayExtension.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.aztechead.Splay]
