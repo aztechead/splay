@@ -9,10 +9,23 @@ let off = false;
 let meta, orig, wrote; // the page's viewport meta, its own content, and what we last set
 let active = false; // widened right now
 
+// Safari's Advanced Fingerprinting Protection reports a made-up screen size, so when the screen doesn't
+// read as the front screen, check Safari's visible area instead: in points it is 382 wide beside the
+// button column (466 before Safari applies the column) and at most the screen's 678 tall. That holds
+// from the first parse, before the viewport tag applies, and after widening. No iPhone screen is 382 wide.
+function frontScreen() {
+  if (!screen.orientation.type.startsWith("portrait")) return false;
+  if (Math.min(screen.width, screen.height) === FRONT_SCREEN_WIDTH) return true;
+  const zoom = visualViewport.scale;
+  const width = innerWidth * zoom;
+  const height = innerHeight * zoom;
+  const nearly = (a, b) => Math.abs(a - b) < 2;
+  return (nearly(width, 382) || nearly(width, FRONT_SCREEN_WIDTH)) && height > 500 && height < 680;
+}
+
 function widen() {
   if (!meta) return;
-  const portrait = screen.orientation.type.startsWith("portrait");
-  const on = !off && portrait && Math.min(screen.width, screen.height) === FRONT_SCREEN_WIDTH;
+  const on = !off && frontScreen();
   active = on;
   // Safari's Page Zoom shows up as visualViewport.scale and is applied after load, with a resize.
   // Later keys override earlier ones, so the page's other settings (viewport-fit etc.) survive.
