@@ -1,0 +1,6 @@
+/* Safari counts only the strip beside its buttons as the window, so on a widened page it shows a horizontal
+   scroll bar for the width of the column. content.js holds the page in place; this hides the bar. */
+html[data-splay]::-webkit-scrollbar:horizontal,
+html[data-splay] > body::-webkit-scrollbar:horizontal {
+  display: none !important;
+}

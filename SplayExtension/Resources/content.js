@@ -2,25 +2,39 @@
 // extends underneath it. Declaring the viewport as wide as the screen lays the page out across
 // that space; the buttons float on top. (Widening <html> alone isn't enough: WebKit clips
 // position:fixed elements to the layout viewport, which only the viewport meta can change.)
-const FRONT_SCREEN_WIDTH = 466; // points, portrait
+const FRONT_SCREEN_WIDTH = 466; // points, the screen's short side
 const root = document.documentElement;
 const site = location.hostname;
 let off = false;
 let meta, orig, wrote; // the page's viewport meta, its own content, and what we last set
 let active = false; // widened right now
 
+// Where Safari's buttons and the camera sit on the front screen, in points, measured on an iPhone Duo with
+// iOS 27.2. x counts toward the button column: in landscape-primary Safari puts the column on the left,
+// so its x values are mirrored (678 - x) and rect() mirrors page boxes to match.
+// edge: where lines of text stop. top: what content that scrolls meets where it sits at the top of the page
+// (the camera, or Safari's top buttons). column: everything there, checked against fixed elements.
+const SCREENS = {
+  portrait: { width: 466, edge: 392, top: [[388, 12, 466, 155]], column: [[388, 12, 466, 390], [388, 535, 466, 648]] },
+  "landscape-secondary": { width: 678, edge: 605, top: [[601, 20, 678, 136]], column: [[601, 20, 678, 136], [601, 278, 678, 388], [523, 388, 678, 466]] },
+  "landscape-primary": { width: 678, edge: 605, left: true, top: [[523, 0, 666, 78], [601, 78, 678, 194]], column: [[523, 0, 678, 78], [601, 78, 678, 194], [601, 326, 678, 436]] },
+};
+const COLUMN_WIDTH = 84; // points Safari keeps beside the page for its buttons
+const layout = () => SCREENS[screen.orientation.type.startsWith("portrait") ? "portrait" : screen.orientation.type];
+
 // Safari's Advanced Fingerprinting Protection reports a made-up screen size, so when the screen doesn't
-// read as the front screen, check Safari's visible area instead: in points it is 382 wide beside the
-// button column (466 before Safari applies the column) and at most the screen's 678 tall. That holds
-// from the first parse, before the viewport tag applies, and after widening. No iPhone screen is 382 wide.
+// read as the front screen, check Safari's visible area instead: in points it is the screen's width less
+// the button column (or the full width, once widened) and shorter than the screen. That holds from the
+// first parse, before the viewport tag applies, and after widening. No iPhone screen is 382 or 594 wide.
 function frontScreen() {
-  if (!screen.orientation.type.startsWith("portrait")) return false;
   if (Math.min(screen.width, screen.height) === FRONT_SCREEN_WIDTH) return true;
   const zoom = visualViewport.scale;
   const width = innerWidth * zoom;
   const height = innerHeight * zoom;
   const nearly = (a, b) => Math.abs(a - b) < 2;
-  return (nearly(width, 382) || nearly(width, FRONT_SCREEN_WIDTH)) && height > 500 && height < 680;
+  const full = layout().width;
+  const short = full === FRONT_SCREEN_WIDTH ? height > 500 && height < 680 : height > 300 && height < 470;
+  return (nearly(width, full - COLUMN_WIDTH) || nearly(width, full)) && short;
 }
 
 function widen() {
@@ -33,7 +47,7 @@ function widen() {
   // viewport taller than the visual one lets fixed elements drift when Safari collapses its bars.
   const zoom = visualViewport.scale;
   const want = on
-    ? `${orig}, width=${FRONT_SCREEN_WIDTH / zoom}, height=device-height, initial-scale=1, minimum-scale=1`
+    ? `${orig}, width=${layout().width / zoom}, height=device-height, initial-scale=1, minimum-scale=1`
     : orig;
   const changed = wrote !== want;
   wrote = want;
@@ -42,6 +56,7 @@ function widen() {
   // Nested horizontal scrollers (carousels) still work: the root's touch-action only gates the page.
   if (on) root.style.setProperty("touch-action", "pan-y pinch-zoom", "important");
   else root.style.removeProperty("touch-action");
+  root.toggleAttribute("data-splay", on); // content.css hides the horizontal scroll bar on widened pages
   if (changed) requestAnimationFrame(arrange);
 }
 
@@ -50,18 +65,50 @@ function arrange() {
   undo();
   narrowed = new WeakSet();
   if (!active) return;
+  align();
   if (!textUnderButtons) narrow([root]);
   dodge();
 }
 
+// Safari counts only the strip beside its buttons as the window, so a widened page can scroll sideways by
+// the width of the column. Keep it in place: at the left edge, or with the column on the left (where the
+// extra width lands off the right edge), scrolled by the column's width so the page starts under it.
+function align(smooth = false) {
+  if (!active) return;
+  const x = layout().left ? COLUMN_WIDTH / visualViewport.scale : 0;
+  if (Math.abs(scrollX - x) > 0.5) scrollTo({ left: x, behavior: smooth ? "smooth" : "instant" });
+}
+
+// A finger can still pan the page sideways (Safari ignores touch-action for it), and correcting that
+// mid-gesture makes it judder. So once scrolling has stopped and no finger is down, glide it back.
+// That also catches pages that scroll themselves, like scrollTo(0, 0) on navigation.
+let touches = 0;
+let settle = 0;
+const track = (event) => (touches = event.touches.length);
+for (const type of ["touchstart", "touchend", "touchcancel"]) addEventListener(type, track, { passive: true, capture: true });
+function settled() {
+  clearTimeout(settle);
+  settle = setTimeout(() => (touches ? settled() : align(true)), 300);
+}
+
+// A page box in CSS pixels with x counted toward the button column, like SCREENS.
+function rect(el) {
+  const r = el.getBoundingClientRect();
+  if (!layout().left) return r;
+  const x = root.getBoundingClientRect().left;
+  const width = layout().width / visualViewport.scale;
+  return { left: width - (r.right - x), right: width - (r.left - x), top: r.top, bottom: r.bottom, width: r.width, height: r.height };
+}
+const side = () => (layout().left ? "Left" : "Right"); // the side of a box facing the column
+
 // Lines of text stop at Safari's button column; images, video and backgrounds keep the full width.
 // Each text block reaching past the column gets right padding, so its box (and background) stays wide.
-const TEXT_EDGE = 392; // points: where the glass of Safari's buttons begins
 let narrowed = new WeakSet();
 let textStyle = "hyphenate"; // "hyphenate", "justify" or "ragged", set in the Splay app
 let textUnderButtons = false; // opt-in in the Splay app: lines run the full width, under the buttons
 function narrow(roots) {
-  const edge = TEXT_EDGE / visualViewport.scale;
+  const edge = layout().edge / visualViewport.scale;
+  const facing = side();
   const width = root.clientWidth;
   const blocks = new Set();
   for (const from of roots) {
@@ -85,18 +132,18 @@ function narrow(roots) {
     const heading = /^H[1-6]$/.test(block.tagName) || parseFloat(font.fontSize) >= 22;
     if (!heading && !containers.has(block) && /start|left|justify/.test(font.textAlign)) prose.push(block);
     if (nestedIn(block, blocks)) continue; // padding the outer block narrows this one too
-    const r = block.getBoundingClientRect();
+    const r = rect(block);
     if (r.right <= edge || r.left >= edge || placement(block) === "scroller") continue;
     if (block.matches(CONTROLS) && r.width <= width * 0.4) continue; // a button: dodge() moves it whole instead
     // Pad from the border edge so the content box (where the text runs) ends exactly at the column.
     const style = getComputedStyle(block);
-    const padding = r.right - parseFloat(style.borderRightWidth) - edge;
-    if (padding <= parseFloat(style.paddingRight)) continue; // its own padding already keeps the text clear
+    const padding = r.right - parseFloat(style[`border${facing}Width`]) - edge;
+    if (padding <= parseFloat(style[`padding${facing}`])) continue; // its own padding already keeps the text clear
     over.push([block, padding]);
   }
   for (const [block, padding] of over) {
     narrowed.add(block);
-    set(block, "padding-right", `${padding}px`);
+    set(block, `padding-${facing.toLowerCase()}`, `${padding}px`);
   }
   // Justify body text that now runs to the column (and hyphenate it, if chosen in the app), so every
   // line ends right at the buttons. Headings keep their ragged edge (a few big words spread across a
@@ -148,11 +195,6 @@ function queue(records) {
 // The camera heads the column (a Live Activity grows down out of it). Under it come the time,
 // connectivity, back and bookmarks, which slide ~90pt lower while a Live Activity shows; the column
 // box covers that lower layout. New tab and tabs sit at the bottom.
-const CAMERA = [388, 12, 466, 155];
-const COLUMN = [
-  [388, 12, 466, 390],
-  [388, 535, 466, 648],
-];
 const GAP = 6; // points of clearance
 const CONTROLS =
   'a[href], button, input, select, textarea, summary, [role="button"], [role="link"], [role="menuitem"], [role="tab"]';
@@ -175,29 +217,32 @@ function undo(count = moved.length) {
 function dodge() {
   const zoom = visualViewport.scale;
   const css = (box) => box.map((v) => v / zoom);
-  const camera = css(CAMERA);
-  const column = COLUMN.map(css);
+  const top = layout().top.map(css);
+  const column = layout().column.map(css);
+  const reach = Math.min(...column.map((box) => box[0]));
+  const facing = side();
+  const away = facing === "Left" ? 1 : -1; // translate direction away from the column
   const width = root.clientWidth;
   for (const control of document.querySelectorAll(CONTROLS)) {
-    const r = control.getBoundingClientRect();
-    if (r.right <= camera[0] || !r.height || r.width > width * 0.4) continue;
+    const r = rect(control);
+    if (r.right <= reach || !r.height || r.width > width * 0.4) continue;
     const position = placement(control);
     if (position === "scroller") continue; // side-scrolling strips bring their items out from under by themselves
     const dy = position ? 0 : scrollY; // scrolling content is checked where it sits at the top of the page
     const hits = (box) => box[0] < r.right && r.left < box[2] && box[1] < r.bottom + dy && r.top + dy < box[3];
-    const blocker = (position === "fixed" ? column : [camera]).find(hits);
+    const blocker = (position === "fixed" ? column : top).find(hits);
     if (!blocker) continue;
     const shift = r.right - blocker[0] + GAP / zoom;
     // Pad the row the control sits in, so its neighbours move left with it instead of being overlapped.
     const row = rowOf(control, r, width);
     if (row) {
-      set(row, "padding-right", `${parseFloat(getComputedStyle(row).paddingRight) + shift}px`);
-      if (control.getBoundingClientRect().right <= blocker[0]) continue;
+      set(row, `padding-${facing.toLowerCase()}`, `${parseFloat(getComputedStyle(row)[`padding${facing}`]) + shift}px`);
+      if (rect(control).right <= blocker[0]) continue;
       undo(1); // positioned out of the row's flow, so padding doesn't reach it
     }
     // Otherwise move the small group around the control (e.g. subscribe, search and menu) as one.
     const cluster = clusterOf(control, width);
-    set(cluster, "translate", `${(parseFloat(cluster.style.translate) || 0) - shift}px`);
+    set(cluster, "translate", `${(parseFloat(cluster.style.translate) || 0) + away * shift}px`);
   }
 }
 
@@ -225,7 +270,7 @@ function clusterOf(control, width) {
 // A header-like row: most of the page wide, reaching the control's right edge, not a whole page section.
 function rowOf(control, r, width) {
   for (let e = control.parentElement; e && e !== document.body; e = e.parentElement) {
-    const box = e.getBoundingClientRect();
+    const box = rect(e);
     if (box.height > 200) return null;
     if (box.width >= width * 0.6 && box.right >= r.right - 1) return e;
   }
@@ -253,6 +298,12 @@ new MutationObserver((records) => {
 }).observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["content"] });
 adopt();
 addEventListener("resize", widen);
+addEventListener("scroll", settled, { passive: true });
+// Turning between the two landscapes keeps the size, so no resize, but the column changes sides.
+screen.orientation.addEventListener("change", () => {
+  widen();
+  requestAnimationFrame(arrange);
+});
 // Headers and floating buttons often arrive with the page's scripts, after the first pass.
 addEventListener("DOMContentLoaded", arrange);
 addEventListener("load", () => {
